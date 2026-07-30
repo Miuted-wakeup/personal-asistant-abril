@@ -7,9 +7,9 @@ def download_file(url, filepath):
     print(f"Descargando {os.path.basename(filepath)}... (esto puede tardar unos minutos)")
     try:
         urllib.request.urlretrieve(url, filepath)
-        print(f"✅ Descarga completada: {filepath}")
+        print(f"Descarga completada: {filepath}")
     except Exception as e:
-        print(f"❌ Error descargando {filepath}: {e}")
+        print(f"Error descargando {filepath}: {e}")
 
 def main():
     print("=== Configurando Entorno de Abril ===\n")
@@ -21,12 +21,12 @@ def main():
     if not env_path.exists():
         if env_example.exists():
             shutil.copy(env_example, env_path)
-            print("✅ Archivo .env creado a partir de .env.example.")
-            print("⚠️ IMPORTANTE: Abre el archivo .env y coloca tus API Keys antes de continuar.\n")
+            print("Archivo .env creado a partir de .env.example.")
+            print("IMPORTANTE: Abre el archivo .env y coloca tus API Keys antes de continuar.\n")
         else:
-            print("⚠️ No se encontró .env.example para crear la plantilla.\n")
+            print("No se encontró .env.example para crear la plantilla.\n")
     else:
-        print("✅ Archivo .env ya existe.\n")
+        print("Archivo .env ya existe.\n")
         
     # 2. Crear carpetas necesarias
     assets_dir = Path("assets")
@@ -43,9 +43,9 @@ def main():
         if not file_path.exists():
             download_file(url, file_path)
         else:
-            print(f"✅ Archivo {filename} ya existe en /assets.")
+            print(f"Archivo {filename} ya existe en /assets.")
             
-    print("\n🎉 ¡Todo listo!")
+    print("\n¡Todo listo!")
     print("Para iniciar a Abril en Discord, corre: python discord-bot/bot.py")
 
 if __name__ == "__main__":

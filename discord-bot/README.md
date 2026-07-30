@@ -1,6 +1,6 @@
-# Bot de Discord
+# Módulo de Conexión a Discord
 
-Este modulo aloja la interfaz de conexion entre Discord y el "cerebro" de Abril.
+Este modulo aloja la interfaz de conexion entre Discord y el orquestador de Abril.
 
 ## Funcionamiento
 

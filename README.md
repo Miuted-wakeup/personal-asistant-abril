@@ -15,6 +15,13 @@ Este es el repositorio del proyecto **Abril**, un asistente de voz inteligente, 
 - **Modo Texto de Prueba**: CLI integrado para pruebas de logica sin hardware de audio.
 - **Avatar Visual**: Reproduccion de video dinamica mediante mpv e IPC sincronizado con el estado del asistente.
 
+## Arquitectura Hibrida
+
+Le clavé Rust a la chingadera para que no tenga cuellos de botella mas que nada en la escucha y habla. Antes escuchaba usando Python y teníamos un uso de CPU de 5% al 10%, ahora usando Rust lo reducimos al 1% (o menos) siempre, locuron:
+
+- **Orquestador Principal (Python):** Se encarga de la logica pesada, invocar a la IA, sintetizar la voz y gestionar la memoria vectorial. Es lento pero facil de iterar.
+- **Microservicio de Hardware (Rust):** Un microservicio de muy bajo nivel que se comunica con el hardware (parlantes y microfono). Consume casi 0% de CPU y evita que Python se congele mientras procesa sonido o red.
+- **Modulos de Inferencia:** Usamos openWakeWord para la deteccion local de palabras clave, Groq (Whisper) para la transcripcion en la nube super rapida y Kokoro-ONNX para el habla hiperrealista.
 ## Pipeline Principal
 
 ```text
@@ -44,7 +51,8 @@ La arquitectura esta dividida en modulos independientes. Consulta los siguientes
 | **Plan Malevolo** | Fases detalladas, tiempos y especificaciones originales. | [Ver Plan](PLAN.md) |
 | **Backend** | Orquestador, LLM, STT, TTS y herramientas. | [Ver README](backend/README.md) |
 | **Discord Bot** | Cliente para integracion remota. | [Ver README](discord-bot/README.md) |
-| **Assets** | Videos del avatar y configuraciones de voz. | [Ver README](assets/README.md) |
+| **Rust Voice** | Exoesqueleto de muy bajo consumo para microfono y altavoces. | [Ver README](rust-voice-service/README.md) |
+| **Assets** | Archivos estaticos y configuraciones de voz. | [Ver README](assets/README.md) |
 
 ## Estructura del Proyecto
 
@@ -97,14 +105,23 @@ abril-asistente/
 
 ## Instalacion y Configuracion Base
 
-1. **Clonar e inicializar entorno**:
+1. **Clonar e inicializar entorno (Python)**:
    ```bash
    python -m venv venv
    source venv/bin/activate
    pip install -r requirements.txt
    ```
 
-2. **Descarga de Modelos y Configuración Automática**:
+2. **Compilar Microservicio de Hardware (Rust)**:
+   Es necesario tener Rust instalado (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`).
+   ```bash
+   cd rust-voice-service
+   cargo build --release
+   cd ..
+   ```
+   *(Nota para Windows: Asegúrate de añadir `rust-voice-service/target` a las exclusiones de Windows Defender para evitar errores al compilar).*
+
+3. **Descarga de Modelos y Configuración Automática**:
    Ejecuta el script de inicialización para descargar la red neuronal de Kokoro (TTS) y generar tu plantilla de variables de entorno:
    ```bash
    python setup.py
@@ -116,18 +133,19 @@ abril-asistente/
    - **BRAVE_SEARCH_API_KEY**: Regístrate en el [Brave Search API Portal](https://api.search.brave.com/app/keys) y obtén una llave para la capa gratuita (Free Data API, hasta 2000 consultas/mes).
    - **DISCORD_TOKEN**: Entra al [Discord Developer Portal](https://discord.com/developers/applications), crea una App, ve a la pestaña "Bot" y haz clic en "Reset Token". *(Importante: Debes encender los tres "Privileged Gateway Intents" en esa misma página).*
 
-3. **Ejecucion en Modo Prueba (Sin Audio)**:
+4. **Ejecucion en Modo Prueba (Sin Audio)**:
    ```bash
    python backend/main.py
    ```
 
-4. **Pruebas de Módulos Individuales**:
-   Como la arquitectura es modular, puedes probar cada sentido de Abril por separado:
-   - **Probar Wake Word (Oído)**: Ejecuta `python backend/wake_word.py`. Habla por tu micrófono (temporalmente detecta "Alexa" o "Hey Mycroft" mientras entrenamos la palabra "Abril").
-   - **Probar Síntesis de Voz (Habla)**: Ejecuta `python backend/text_to_speech.py`. Sintetizará y reproducirá una frase de prueba en español de forma totalmente local.
-   - **Probar Puente de Discord (Telepatía)**: Ejecuta `python discord-bot/bot.py`. Abril se pondrá en línea en tu servidor y te responderá si la mencionas (`@Abril`) o si le escribes por Mensaje Directo.
-   - **Probar Memoria (Hipocampo)**: Ejecuta `python scripts/ver_memoria.py`. Inspecciona y muestra todos los recuerdos que Abril ha guardado sobre ti en ChromaDB en texto claro.
-   - **Probar Avatar ASCII (Cara)**: Ejecuta `python avatar.py`. Abre la cara virtual de Abril en consola, la cual reaccionará en tiempo real al estado del bot de Discord a 10 FPS.
+5. **Pruebas de Módulos Individuales**:
+   Como la arquitectura es modular, puedes probar cada componente por separado:
+   - **Probar Microservicio (Rust)**: Ve a la carpeta `rust-voice-service` y ejecuta `cargo run`. Escuchará el puerto TCP 9001. Mantenlo abierto.
+   - **Probar Wake Word**: Ejecuta `python backend/wake_word.py`. Habla por tu micrófono.
+   - **Probar Síntesis de Voz**: Con el servidor de Rust encendido, ejecuta `python backend/text_to_speech.py`. Python enviará la voz a Rust para reproducirla sin bloqueos.
+   - **Probar Puente de Discord**: Ejecuta `python discord-bot/bot.py`.
+   - **Probar Memoria Local**: Ejecuta `python scripts/ver_memoria.py`.
+   - **Probar Avatar ASCII**: Ejecuta `python avatar.py`.
 
 ## Fases de Desarrollo y Planificacion
 
@@ -138,10 +156,10 @@ abril-asistente/
 | **Fase 5** | Conexion Nube Groq STT/LLM y Prompt Dinamico | Completado |
 | **Fase 6** | Motor TTS Local (Kokoro ONNX) | Completado |
 | **Fase 7** | Memoria Persistente ChromaDB (Embeddings locales) | Completado |
-| **Fase 8** | Avatar Visual interactivo en consola (Anime ASCII) | En Desarrollo (~70%) |
+| **Fase 8** | Avatar Visual interactivo en consola (Anime ASCII) | Pospuesto (Usando ASCII temporal) |
 | **Fase 9** | Discord Bot (Cliente para integracion remota) | Completado |
-| **Fase 10**| Orquestacion Principal (systemd) | Planeado |
-| **Fase 11-15**| Domotica LAN, Eventos Proactivos y Vision | Planeado |
+| **Fase 10**| Orquestacion Principal (systemd y latencia cero) | Completado |
+| **Fase 11-14**| Eventos Proactivos, Domotica LAN y Celular | Planeado |
 | **Fase 16-18**| OpenClaw, Sensores de Presencia y Cuentas | Planeado |
 
 ## Agradecimientos y Creditos
@@ -150,4 +168,7 @@ La idea conceptual de crear un asistente con personalidad y memoria persistente 
 
 ## Licencia
 
-Proyecto personal desarrollado por **Muted**.
+Proyecto personal desarrollado por **Muted** pero ta para quien quiera usarlo o modificarlo nomas tratenmela bien :p
+
+PD: si me lo roban no me importa pero al menos dejen los creditos xfa ヾ(＾∇＾)
+

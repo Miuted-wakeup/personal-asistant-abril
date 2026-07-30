@@ -1,0 +1,21 @@
+{
+  "transitions": {
+    "thinking": [
+      "Déjame revisarlo.",
+      "Un segundo.",
+      "Veamos qué encuentro.",
+      "Dame un momento.",
+      "Estoy procesándolo."
+    ],
+    "executing": [
+      "Claro, ahora mismo.",
+      "Voy con ello.",
+      "Listo.",
+      "Entendido."
+    ],
+    "error": [
+      "Hubo un problema, ¿puedes repetirlo?",
+      "Algo salió mal, inténtalo de nuevo."
+    ]
+  }
+}

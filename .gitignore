@@ -33,3 +33,25 @@ assets/voices/*.bin
 .vscode/
 .idea/
 .DS_Store
+
+# Rust
+rust-voice-service/target/
+**/*.rs.bk
+
+# Basura de Windows
+Thumbs.db
+desktop.ini
+
+# Archivos de Audio Temporales
+*.wav
+*.mp3
+!assets/voices/*.wav
+!assets/voices/*.mp3
+
+# Bases de datos SQLite y Temporales
+*.sqlite3
+*.db
+
+# Caché y Tests de Python extra
+.pytest_cache/
+.mypy_cache/

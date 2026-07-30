@@ -10,22 +10,29 @@ Este documento contiene la planificación original y detallada de todas las fase
 - **Fase 9 (Bot Discord):** Completado (100% - Conexión por MD y Servidores).
 - **Fase 10 (Orquestación continua):** Pendiente.
 
+## Filosofia y Arquitectura Base
+Antes de avanzar a los modulos complejos, el proyecto se rige por los siguientes principios para garantizar que la V1 sea rapida, estable y eficiente en nuestro hardware humilde:
+1. **Eficiencia sobre potencia:** Utilizar unicamente los recursos necesarios para cada tarea, manteniendo el consumo ultra bajo para operar 24/7 de forma local.
+2. **Latencia percibida cero:** El usuario nunca debe sentir que el sistema esta bloqueado. Mientras el LLM piensa, el sistema lanzara audios locales pregrabados ("Claro", "Dejame revisarlo") para ofrecer retroalimentacion instantanea.
+3. **Maquina de Estados y Event Bus:** Todo el sistema opera bajo estados claros (IDLE, LISTENING, TRANSCRIBING, THINKING, EXECUTING, SPEAKING). Estos estados fluyen por nuestra conexion IPC, permitiendo que la interfaz visual, Discord y los modulos reaccionen de forma asincrona sin bloquear el bucle principal.
+4. **Instrumentacion rigurosa:** Cada paso del pipeline (WakeWord, STT, LLM, TTS) mide y registra sus tiempos de ejecucion en milisegundos. Optimizamos con datos duros, no con intuiciones.
+5. **Fallback Offline (LAN):** La arquitectura es agnostica de la red. Si el internet cae, Abril mantendra utilidades basicas (control domotico, reproduccion local, calendario) operando enteramente en la red local.
+
 
 ```mermaid
 graph TD
     F1[Fase 1: Infraestructura y OS] --> F2[Fase 2: Red y SSH Headless]
     F2 --> F3[Fase 3: Entorno y Pipeline Principal]
     F3 --> F4[Fase 4: Audio y Wake Word Local]
-    F4 --> F4_5[Fase 4.5: Filtro y Supresion de Ruido]
-    F4_5 --> F5[Fase 5: Conexion Nube Groq STT/LLM]
+    F4 --> F5[Fase 5: Conexion Nube Groq STT/LLM]
     F5 --> F6[Fase 6: Motor TTS Kokoro en Espanol]
     F6 --> F7[Fase 7: Memoria ChromaDB]
     F7 --> F8[Fase 8: Interfaz Visual mpv + IPC + X11]
     F8 --> F9[Fase 9: Bot de Discord]
     F9 --> F10[Fase 10: Orquestacion y Automatizacion]
-    F10 --> F10_5[Fase 10.5: Interrupcion por Voz - Barge-In]
-    F10_5 --> F11[Fase 11-15: Modulos Avanzados]
-    F11 --> F16[Fase 16-18: Integracion Final OpenClaw y Sensores]
+    F10 --> F11[Fase 11: Microservicio Rust (Audio y Red)]
+    F11 --> F12[Fase 12-14: Modulos Avanzados y Domotica]
+    F12 --> F16[Fase 16-18: Integracion Final OpenClaw]
 ```
 
 ## Detalle de Fases y Tareas
@@ -46,13 +53,12 @@ graph TD
 3. **Creacion de Archivos Base**: Inicializar `.env`, `config.json` y `requirements.txt`.
 
 ### Fase 4: Entrada de Audio y Wake Word Local
-1. **Instalacion**: Instalar PyAudio y `openWakeWord`.
+1. **Instalacion**: Instalar PyAudio y `openWakeWord`. *(Nota: La captura de audio crudo por PyAudio fue un dolor de cabeza de rendimiento, así que lo mandamos a Rust en la Fase 11)*.
 2. **Configuracion ALSA**: Configurar los dispositivos de entrada de audio para asegurar que el microfono ambiental USB o Jack de 3.5mm sea el dispositivo de captura por defecto en Linux.
 3. **Desarrollo de `wake_word.py`**:
    * Cargar el modelo pre-entrenado ONNX.
-   * Monitorear el flujo del microfono de forma continua.
-   * Implementar deteccion de silencio (VAD ligera) para pausar la escucha cuando tu dejes de hablar.
-   * Retornar una senal al orquestador cuando se detecte "Abril".
+   * Monitorear el flujo del microfono (ahora alimentado por Rust).
+   * Retornar una senal al Nerd (Python) cuando se detecte "Abril".
 
 ### Fase 4.5: Filtro de Audio de Entrada (Reduccion de Ruido)
 1. **Reduccion de Ruido**: Dado que es un microfono ambiental de habitacion (sujeto a ruido de ventiladores, eco o musica), se integrara un filtro de procesamiento digital de senales (DSP).
@@ -94,9 +100,15 @@ graph TD
 2. **Persistencia de Canal**: Vincular el bot a tus servidores/canales designados.
 3. **Puente de Comunicacion**: Enlazar los mensajes de Discord con `brain_llm.py` y `memory_system.py`.
 
-### Fase 10: Orquestacion y Servicio en Segundo Plano (systemd)
-1. **Bucle Principal (`main.py`)**: Coordina todos los scripts mediante una maquina de estados.
-2. **Servicio Automatico (systemd)**: Crear un archivo para que el asistente arranque automaticamente al encender la torre de la habitacion y se reinicie en caso de algun fallo.
+### Fase 10: Orquestacion, Arquitectura y Servicio (systemd)
+1. **Bucle Principal e Instrumentacion (`main.py`)**: 
+   * Construir el orquestador final midiendo los tiempos de cada modulo en milisegundos.
+   * Implementar la maquina de estados completa (IDLE -> LISTENING -> TRANSCRIBING -> THINKING -> EXECUTING -> SPEAKING) que emita eventos por el socket IPC existente.
+2. **Respuestas de Baja Latencia (Zero-Latency Fillers)**:
+   * Extraer respuestas pregrabadas cortas y frases de personalidad a un archivo local de configuracion.
+   * Reproducir instantaneamente frases de transicion ("Un segundo", "Voy con ello") antes de disparar las llamadas pesadas de STT/LLM a la red.
+3. **Cola de Tareas y Modularidad**: Preparar la base para que futuras "skills" (domotica, clima) se encolen en un worker sin romper la respuesta del asistente.
+4. **Servicio Automatico (systemd)**: Daemonizar el script para que arranque de forma silenciosa al encender la PC y se auto-recupere de caidas.
 
 ### Fase 10.5: Interrupcion por Voz (Barge-In)
 1. **Logica de Interrupcion**: Habilitar que el usuario detenga a Abril mientras esta hablando si la respuesta es demasiado larga o incorrecta.
@@ -108,32 +120,32 @@ graph TD
 
 Para transformar a Abril de un asistente pasivo a uno proactivo y conectado con su entorno, se incorporaran estas funcionalidades:
 
-### 1. Eventos Proactivos y Tareas Programadas (Fase 11)
+### 1. El Exoesqueleto Rust (Fase 11 - Refactorizacion Hibrida)
+Le clavamos Rust a la chingadera para que no tenga cuellos de botella en la escucha y el habla. Migracion del manejo de hardware a un microservicio en Rust para reducir el uso de CPU a 1% (o menos), siempre locuron.
+* **Tecnologia**: Rust, cpal, rodio, y matemáticas puras para el VAD (RMS y Zero-Crossing Rate para los gordos números) en lugar de IA pesada.
+* **Flujo**: El Exoesqueleto (Rust) captura el audio fisico y reproduce la voz sin congelar al Nerd (Python). Se comunican por sockets TCP locales.
+
+### 2. Eventos Proactivos y Tareas Programadas (Fase 12)
 * **Tecnologia**: `APScheduler` en Python.
 * **Ejemplo**: *"Buenos dias. Recuerda que en 30 minutos inicia tu clase"*.
 
-### 2. Control del Entorno (Fase 12 - Domotica Local)
+### 3. Control del Entorno (Fase 13 - Domotica Local)
 * **Tecnologia**: `tinytuya` (para dispositivos Tuya/Smart Life).
 * **Flujo**: *"Abril, apaga las luces"* -> Groq detecta la intencion -> Ejecuta la llamada local en milisegundos por Wi-Fi.
 
-### 3. Personalizacion Dinamica del System Prompt (Fase 13)
+### 4. Personalizacion Dinamica del System Prompt (Fase 14)
 * **Tecnologia**: Inyeccion dinamica de variables en `brain_llm.py`.
 * **Ejemplo**: A partir de las 11:00 PM, el prompt le indicara a Abril: *"Es tarde en la noche. Responde con un tono suave y sugiere descanso"*.
 
-### 4. Sistema de Alertas del Celular (Fase 14)
+### 5. Sistema de Alertas del Celular (Fase 15)
 * **Tecnologia**: `KDE Connect` emparejado con tu dispositivo Android. Un script local lee las notificaciones entrantes y las filtra.
 * **Caso de Uso**: Dejas tu celular cargando en otra habitacion o estas lejos del escritorio. Si recibes un mensaje urgente (ej. un WhatsApp de tu familia), Abril te interrumpe y dice: *"Muted, te acaba de llegar un mensaje de tu mama diciendo que ya llego"*. Te permite dictarle una respuesta en voz alta sin tocar tu telefono.
 
-### 5. Vision Hibrida via Webcam USB (Fase 15)
-Habilidad para que Abril "vea" el mundo real y pueda ayudarte en tareas manuales o visuales.
-* **Tecnologia**: `OpenCV` para capturar un fotograma de una Webcam conectada a su hardware, el cual se envia comprimido a la API Vision de Groq (usando Llama 3.2 Vision u otro modelo multimodal).
-* **Caso de Uso**: Le muestras a Abril una placa electronica o un cable roto en tus manos y le dices: *"Abril, mira esto, ¿donde va conectado este cable rojo?"*. Ella analiza la foto en milisegundos y te responde conversacionalmente. Tambien puede servir para que le muestres ropa y te diga si combina.
 
----
 ### 6. Integracion y Control de la PC Principal (Fase 16 - OpenClaw + MXC)
 Habilidad de Abril para interactuar de manera remota con tu ordenador de uso diario y ejecutar tareas o automatizaciones complejas (abrir programas, revisar correos, organizar ventanas).
 * **Tecnologia**: Framework **OpenClaw** y **Microsoft Execution Containers (MXC)**.
-* **Implementacion**: Para usar las funciones de agente capaz de controlar tu PC, debes instalar OpenClaw y configurarlo exclusivamente en el PC que quieres usar para esto (NO en el hardware de Abril ni en la Raspberry Pi). Abril funcionara como el "cerebro" y enviara las instrucciones por red local a esa instancia de OpenClaw.
+* **Implementacion**: Para usar las funciones de agente capaz de controlar tu PC, debes instalar OpenClaw y configurarlo exclusivamente en el PC que quieres usar para esto (NO en el hardware de Abril ni en la Raspberry Pi). Abril funcionara como orquestador central y enviara las instrucciones por red local a esa instancia de OpenClaw.
 * **Seguridad**: Aprovechando los nuevos contenedores para agentes de Microsoft (MXC), OpenClaw correra en un entorno aislado (sandbox) en tu PC principal. Esto garantiza de manera nativa que si la IA llega a alucinar o intenta algo destructivo, el sistema operativo de Windows bloqueara la accion, protegiendo tus archivos.
 
 ### 7. Automatizacion Basada en Criterios de Presencia (Fase 17)
@@ -142,7 +154,7 @@ Dotar a la habitacion de sensores fisicos para que Abril reaccione a tu existenc
 * **Caso de Uso**: Llegas a tu cuarto despues del trabajo. El sensor detecta que entraste e instantaneamente Abril "despierta" su pantalla, enciende tus luces de ambiente led y te dice proactivamente: *"Hola Muted, bienvenido de nuevo"*. Si sales por mas de 15 minutos, ella misma apaga la iluminacion y la pantalla para mantener su bajo consumo.
 
 ### 8. Sincronizacion de Cuentas Personales (Fase 18)
-Conectar el cerebro de Abril a tus ecosistemas digitales privados de productividad.
+Conectar el sistema principal de Abril a tus ecosistemas digitales privados de productividad.
 * **Tecnologia**: Autenticacion ligera OAuth2 para integracion con APIs de Google Calendar, Gmail o Microsoft To-Do.
 * **Caso de Uso**: Te despiertas y preguntas: *"Abril, ¿tengo algo importante hoy?"*. Ella lee tu calendario y responde: *"Tienes la entrega del proyecto a las 2 PM, y por cierto, te acaba de llegar un correo urgente de la universidad"*.
 
@@ -157,5 +169,5 @@ Conectar el cerebro de Abril a tus ecosistemas digitales privados de productivid
 | **Fase 4.5 a 6**: APIs de Groq, Filtros DSP y TTS Kokoro | 2 Semanas | Media |
 | **Fase 7 y 8**: Memoria ChromaDB e Integracion IPC con `mpv` | 3 Semanas | Alta |
 | **Fase 9 y 10**: Bot de Discord, Orquestador Principal y systemd | 2 Semanas | Media |
-| **Fase 11 a 15**: Domotica, Vision, Celular y Proactividad | 1 a 2 Meses | Alta |
+| **Fase 11 a 14**: Domotica, Celular y Proactividad | 1 a 2 Meses | Alta |
 | **Fase 16 a 18**: OpenClaw, Sensores de Presencia y Cuentas | Varios Meses | Muy Alta |

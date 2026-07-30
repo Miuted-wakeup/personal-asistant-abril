@@ -33,10 +33,27 @@ class TextToSpeech:
         samples, sample_rate = self.kokoro.create(
             text, voice=voice, speed=1.0, lang="es" 
         )
-        # Reproducir audio
-        sd.play(samples, sample_rate)
-        sd.wait()
-
+        # Intentar enviar el audio al Exoesqueleto de Rust
+        import socket
+        import io
+        import soundfile as sf
+        
+        try:
+            # Convertir el array numpy a un archivo WAV en memoria
+            wav_io = io.BytesIO()
+            sf.write(wav_io, samples, sample_rate, format='wav')
+            
+            # Enviar los bytes por TCP
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(2.0)
+                s.connect(('127.0.0.1', 9001))
+                s.sendall(wav_io.getvalue())
+                logger.debug("Audio enviado a Rust exitosamente (No bloqueante).")
+                
+        except (ConnectionRefusedError, socket.timeout):
+            logger.warning("Rust Exo-skeleton no detectado en el puerto 9001. Usando sounddevice (bloqueante)...")
+            sd.play(samples, sample_rate)
+            sd.wait()
 if __name__ == "__main__":
     print("Iniciando prueba aislada de TTS...")
     tts = TextToSpeech()
